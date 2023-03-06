@@ -1,115 +1,49 @@
 package com.demiray.zuul;
 
-import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.config.BeanPostProcessor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.web.servlet.error.ErrorController;
-import org.springframework.cglib.proxy.*;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
-import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+import org.springframework.cloud.netflix.ribbon.RibbonAutoConfiguration;
+import org.springframework.cloud.netflix.ribbon.RibbonClients;
 import org.springframework.cloud.netflix.zuul.EnableZuulProxy;
-import org.springframework.cloud.netflix.zuul.filters.RouteLocator;
-import org.springframework.cloud.netflix.zuul.web.ZuulController;
-import org.springframework.cloud.netflix.zuul.web.ZuulHandlerMapping;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
+import javax.annotation.PostConstruct;
+import java.util.List;
+
 
 @SpringBootApplication
-@EnableEurekaClient
 @EnableDiscoveryClient
+@Configuration
 @EnableZuulProxy
+@AutoConfigureAfter(RibbonAutoConfiguration.class)
+@RibbonClients(defaultConfiguration = RibbonConfig.class)
+@Slf4j
 public class ZuulApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(ZuulApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(ZuulApplication.class, args);
+    }
 
-}
-@Configuration
-class ZuulConfiguration {
+    @PostConstruct
+    public void init(DiscoveryClient client) {
+        log.info("Services: {}", client.getServices());
 
-	/** The path returned by ErrorContoller.getErrorPath() with Spring Boot < 2.5 (and no longer available on Spring Boot >= 2.5). */
-	private static final String ERROR_PATH = "/error";
+        client.getServices().forEach(svc -> {
+            try {
+                List<ServiceInstance> its = client.getInstances(svc);
+                for (ServiceInstance it : its) {
+                    log.info("Instance: url={}:{}, id={}, service={}", it.getHost(), it.getPort(), it.getInstanceId(), it.getServiceId());
+                }
+            } catch (Exception ex) {
+                log.warn("Failed to lookup instance due to endpoint not specifying port for service {}. Exception: {}" + svc, ex.toString());
+            }
+        });
 
-	/**
-	 * Constructs a new bean post-processor for Zuul.
-	 *
-	 * @param routeLocator
-	 *            the route locator.
-	 * @param zuulController
-	 *            the Zuul controller.
-	 * @param errorController
-	 *            the error controller.
-	 * @return the new bean post-processor.
-	 */
-	@Bean
-	public ZuulPostProcessor zuulPostProcessor(@Autowired RouteLocator routeLocator, @Autowired ZuulController zuulController,
-											   @Autowired(required = false) ErrorController errorController) {
-		return new ZuulPostProcessor(routeLocator, zuulController, errorController);
-	}
-
-	private static final class ZuulPostProcessor implements BeanPostProcessor {
-
-		private final RouteLocator routeLocator;
-
-		private final ZuulController zuulController;
-
-		private final boolean hasErrorController;
-
-		ZuulPostProcessor(RouteLocator routeLocator, ZuulController zuulController, ErrorController errorController) {
-			this.routeLocator = routeLocator;
-			this.zuulController = zuulController;
-			this.hasErrorController = (errorController != null);
-		}
-
-		@Override
-		public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-			if (hasErrorController && (bean instanceof ZuulHandlerMapping)) {
-				Enhancer enhancer = new Enhancer();
-				enhancer.setSuperclass(ZuulHandlerMapping.class);
-				enhancer.setCallbackFilter(LookupHandlerCallbackFilter.INSTANCE); // only for lookupHandler
-				enhancer.setCallbacks(new Callback[] { LookupHandlerMethodInterceptor.INSTANCE, NoOp.INSTANCE });
-				Constructor<?> ctor = ZuulHandlerMapping.class.getConstructors()[0];
-				return enhancer.create(ctor.getParameterTypes(), new Object[] { routeLocator, zuulController });
-			}
-			return bean;
-		}
-
-	}
-
-	private enum LookupHandlerCallbackFilter implements CallbackFilter {
-
-		INSTANCE;
-
-		@Override
-		public int accept(Method method) {
-			if ("lookupHandler".equals(method.getName())) {
-				return 0;
-			}
-			return 1;
-		}
-
-	}
-
-	private enum LookupHandlerMethodInterceptor implements MethodInterceptor {
-
-		INSTANCE;
-
-		@Override
-		public Object intercept(Object target, Method method, Object[] args, MethodProxy methodProxy) throws Throwable {
-			if (ERROR_PATH.equals(args[0])) {
-
-				/* by entering this branch we avoid the ZuulHandlerMapping.lookupHandler method to trigger the NoSuchMethodError */
-				return null;
-			}
-			return methodProxy.invokeSuper(target, args);
-		}
-
-	}
+    }
 
 }
