@@ -1,0 +1,54 @@
+version: '3.3'
+services:
+  registry-service:
+    image: demiray.co/registry:0.0.1-SNAPSHOT
+    ports:
+      - 8761:8761
+  zuul-service:
+    image: demiray.co/zuul:0.0.1-SNAPSHOT
+    depends_on:
+      - registry-service
+    environment: 
+      - eureka.client.serviceUrl.defaultZone=http://registry-service:8761/eureka/
+      - auth-service.ribbon.listOfServers=http://auth-service:8081
+      - eureka.client.fetch-registry=true
+    ports:
+      - 8762:8762
+    links:
+      - registry-service
+  auth-service:
+    image: demiray.co/auth:0.0.1-SNAPSHOT
+    depends_on:
+      - registry-service
+      - zuul-service
+    environment: 
+      - eureka.client.serviceUrl.defaultZone=http://registry-service:8761/eureka/
+      - eureka.client.fetch-registry=true
+    ports:
+      - 8081:8081
+    links:
+      - registry-service
+  image-service:
+    image: demiray.co/image:0.0.1-SNAPSHOT
+    depends_on:
+      - registry-service
+      - zuul-service
+    environment: 
+      - eureka.client.serviceUrl.defaultZone=http://registry-service:8761/eureka/
+      - eureka.client.fetch-registry=true
+    ports:
+      - 8084:8084
+    links:
+      - registry-service
+  gallery-service:
+    image: demiray.co/gallery:0.0.1-SNAPSHOT
+    depends_on:
+      - registry-service
+      - zuul-service
+    environment: 
+      - eureka.client.serviceUrl.defaultZone=http://registry-service:8761/eureka/
+      - eureka.client.fetch-registry=true
+    ports:
+      - 8080:8080
+    links:
+      - registry-service
