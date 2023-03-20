@@ -1,0 +1,6 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: gallery
+data:
+  spring.cloud.kubernetes.discovery.all-namespaces: "true"
